@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN//EN" "http://www.springframework.org/dtd/spring-beans.dtd">
+<beans default-autowire="constructor">
+	<bean id="buildFeature" class="com.otr.PublishStatusBuildFeature"/>
+
+	<bean id="settings" class="com.otr.DefaultSettings"/>
+	<bean id="manager" class="com.otr.PublisherStatusManager"/>
+	<bean id="buildStatusListener" class="com.otr.BuildStatusListener"/>
+
+	<bean id="publishStatusController" class="com.otr.PublishStatusController"/>
+	<bean id="publiserStatusSettingsController" class="com.otr.PublishStatusSettingsController"/>
+
+</beans>
