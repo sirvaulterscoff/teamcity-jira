@@ -3,7 +3,7 @@
   <info>
     <name>teamcity-jira</name>
     <display-name>teamcity-jira</display-name>
-    <version>1.0</version>
+    <version>1.1</version>
     <description>Teamcity-JIRA integration</description>
     <download-url>https://github.com/sirvaulterscoff/teamcity-jira</download-url>
     <email>pobedyonny.alexey@gmail.com</email>

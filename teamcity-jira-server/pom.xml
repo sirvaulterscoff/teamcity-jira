@@ -4,7 +4,7 @@
   <parent>
     <artifactId>teamcity-jira</artifactId>
     <groupId>com.otr</groupId>
-    <version>1.0</version>
+    <version>1.1</version>
   </parent>
   <artifactId>teamcity-jira-server</artifactId>
   <packaging>jar</packaging>

@@ -50,6 +50,8 @@ import java.util.regex.Pattern;
  */
 public class StatusPublisherImpl implements StatusPublisher {
 	protected static final Logger log = LoggerFactory.getLogger(StatusPublisherImpl.class);
+	public static final String PLACEHOLDER_PREFIX = "#{";
+	public static final String PLACEHOLDER_SUFFIX = "}";
 
 	public static final String NOT_AN_ISSUE = "not-issue";
 
@@ -103,7 +105,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 					Issue issue = jira.getIssue(ticket);
 					if (addComment) {
 						log.debug("Adding comment to issue " + ticket);
-						issue.addComment(commentFormat);
+						issue.addComment(formatComment(commentFormat, build.getParametersProvider().getAll()));
 					}
 					if (!Iterables
 							.tryFind(issue.getFixVersions(), new FindVersionPredicate(RESOLVE_VERSION))
@@ -127,6 +129,16 @@ public class StatusPublisherImpl implements StatusPublisher {
 				}
 			}
 		}
+	}
+
+	private String formatComment(String commentFormat, Map<String, String> args) {
+		String out = commentFormat;
+		for (String arg : args.keySet()) {
+			out = Pattern.compile(Pattern.quote(PLACEHOLDER_PREFIX + arg + PLACEHOLDER_SUFFIX)).
+					matcher(out).
+					replaceAll(args.get(arg));
+		}
+		return out;
 	}
 
 	private class ToTicketFunction implements Function<SVcsModification, String> {
