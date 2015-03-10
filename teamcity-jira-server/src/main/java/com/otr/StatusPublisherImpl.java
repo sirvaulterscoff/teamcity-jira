@@ -5,6 +5,7 @@ import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
+import jetbrains.buildServer.parameters.ParametersProvider;
 import jetbrains.buildServer.serverSide.SRunningBuild;
 import jetbrains.buildServer.vcs.SVcsModification;
 import jetbrains.buildServer.vcs.SelectPrevBuildPolicy;
@@ -25,14 +26,35 @@ import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.conn.BasicClientConnectionManager;
+import org.apache.velocity.Template;
+import org.apache.velocity.VelocityContext;
+import org.apache.velocity.app.VelocityEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.tmatesoft.svn.core.SVNCommitInfo;
+import org.tmatesoft.svn.core.SVNException;
+import org.tmatesoft.svn.core.SVNNodeKind;
+import org.tmatesoft.svn.core.SVNProperties;
+import org.tmatesoft.svn.core.SVNURL;
+import org.tmatesoft.svn.core.auth.ISVNAuthenticationManager;
+import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
+import org.tmatesoft.svn.core.io.ISVNEditor;
+import org.tmatesoft.svn.core.io.SVNRepository;
+import org.tmatesoft.svn.core.io.SVNRepositoryFactory;
+import org.tmatesoft.svn.core.io.diff.SVNDeltaGenerator;
+import org.tmatesoft.svn.core.wc.SVNWCUtil;
 
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.StringWriter;
 import java.net.URI;
+import java.util.*;
+import javax.mail.*;
+import javax.mail.internet.*;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
@@ -41,6 +63,7 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,8 +75,14 @@ public class StatusPublisherImpl implements StatusPublisher {
 	protected static final Logger log = LoggerFactory.getLogger(StatusPublisherImpl.class);
 	public static final String PLACEHOLDER_PREFIX = "#{";
 	public static final String PLACEHOLDER_SUFFIX = "}";
+	public static final String SPLITTER = ",";
 
 	public static final String NOT_AN_ISSUE = "not-issue";
+
+	public static final String JIRA_STATUS_IDS = "jiraStatusIds";
+	public static final String JIRA_RESOLUTION_IDS = "jiraResolutionIds";
+	public static final String JIRA_DEFAULT_STATUS_IDS = "Closed";
+	public static final String JIRA_DEFAULT_RESOLUTION_IDS = "Fixed";
 
 	public static final String JIRA_PROJECT_KEYS = "jiraKeys";
 	public static final String JIRA_URL = "jiraUrl";
@@ -66,6 +95,54 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String TRANSITION_ISSUE = "transitionIssue";
 	public static final String TRANSITION_FORMAT = "transitionFormat";
 
+	public static final String SEND_EMAIL_NOTIFICATION = "sendEmailNotification";
+	public static final String EMAIL_USER_NAME = "emailUserName";
+	public static final String EMAIL_USER_PASSWORD = "emailUserPassword";
+	public static final String EMAIL_FROM = "emailFrom";
+	public static final String EMAIL_TO = "emailTo";
+	public static final String EMAIL_SMTP_HOST = "smtpHost";
+	public static final String EMAIL_SMTP_PORT = "smtpPort";
+	public static final String EMAIL_SMTP_AUTH = "smtpAuth";
+	public static final String EMAIL_SMTP_STARTTLS = "smtpStartTls";
+
+	public static final String COMMIT_TO_SVN = "commitToSvn";
+	public static final String SVN_URL = "svnUrl";
+	public static final String SVN_USER_NAME = "svnUserName";
+	public static final String SVN_USER_PASSWORD = "svnUserPassword";
+	public static final String SVN_HTMLFILE_NAME = "svnHTMLFileName";
+	public static final String SVN_TXTFILE_NAME = "svnTXTFileName";
+
+	public static final String EMAIL_SUBJECT = "emailSubject";
+	public static final String EMAIL_DEFAULT_SUBJECT = "UFOS-CORE RELEASE ";
+
+	public static final String REPORTTXT_DEFAULT_SUBJECT = "";
+
+	//	public static final String REPORT_FILE_PATH = "reportFilePath";
+//	public static final String REPORT_FILE_NAME = "reportFileName";
+//	public static final String REPORT_TEMPLATE_FILE_PATH = "reportTemplateFilePath";
+	public static final String REPORT_TEMPLATE_FILE_NAME = "reportTemplateFileName";
+
+	public static final String DEVELOPMENT_TEAM_NAME = "developmentTeam";
+	public static final String DEFAULT_DEVELOPMENT_TEAM_NAME = "Our Development Team";
+
+	public static String BUILD_BRANCH = "buildBranch";
+	public static String BUILD_VERSION_NUMBER = "buildVersionNumber";
+	public static String RELEASE_CONST_RC = "releaseConstRC";
+	public static String RELEASE_BUILD_COUNTER = "releaseBuildCounter";
+	public static String RELEASE_VERSION = "releaseVersion";
+	public static String BUILD_TRIGGERED_BY = "triggeredBy";
+	public static String CVS_REVISION_NUMBER = "cvsRevisionNumber";
+
+	public static String ISSUE_LIST = "issueList";
+	public static String ISSUE_KEY = "issueKey";
+	public static String ISSUE_SUMMARY = "issueSummary";
+	public static String ISSUE_TYPE = "issueType";
+	public static String ISSUE_PRIORITY = "issuePriority";
+	public static String ISSUE_AUTOR = "issueAutor";
+	public static String ISSUE_RFPNAME = "issueRFPName";
+	public static String ISSUE_SUBSYSTEM = "issueSubsystem";
+	public static String ISSUE_FUNCTION = "issueFunction";
+
 	private Map<String, String> params;
 
 	public StatusPublisherImpl(Map<String, String> params) {
@@ -73,10 +150,27 @@ public class StatusPublisherImpl implements StatusPublisher {
 	}
 
 	public void buildFinished(SRunningBuild build) {
+		log.info("Start process after build finished");
 		String jiraProjectsStr = params.get(JIRA_PROJECT_KEYS);
-		Iterable<String> jiraProjects = Splitter.on(",").trimResults().omitEmptyStrings().split(jiraProjectsStr);
+		Iterable<String> jiraProjects = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(jiraProjectsStr);
 		boolean addComment = Boolean.parseBoolean(params.get(ADD_COMMENT));
 		String commentFormat = params.get(COMMENT_FORMAT);
+		String jiraStatusIdsList = params.get(JIRA_STATUS_IDS);
+		String[] jiraStatusIds;
+		if (jiraStatusIdsList != null) {
+			jiraStatusIds = jiraStatusIdsList.trim().split(SPLITTER);
+		} else {
+			jiraStatusIds = new String[1];
+			jiraStatusIds[0] = JIRA_DEFAULT_STATUS_IDS;
+		}
+		String jiraResolutionIdsList = params.get(JIRA_RESOLUTION_IDS);
+		String[] jiraResolutionIds;
+		if (jiraResolutionIdsList != null) {
+			jiraResolutionIds = jiraResolutionIdsList.trim().split(SPLITTER);
+		} else {
+			jiraResolutionIds = new String[1];
+			jiraResolutionIds[0] = JIRA_DEFAULT_RESOLUTION_IDS;
+		}
 		String resolveVersion = params.get(RESOLVE_VERSION);
 		String jiraUrl = params.get(JIRA_URL);
 		String jiraUser = params.get(JIRA_USER);
@@ -85,8 +179,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 		boolean transitionIssue = Boolean.parseBoolean(params.get(TRANSITION_ISSUE));
 		String transitionFormat = params.get(TRANSITION_FORMAT);
 
-		List<SVcsModification> changes = build.getChanges(SelectPrevBuildPolicy.SINCE_LAST_SUCCESSFULLY_FINISHED_BUILD, false);
+		List<SVcsModification> changes = build.getChanges(SelectPrevBuildPolicy.SINCE_LAST_SUCCESSFULLY_FINISHED_BUILD, true);
+		List<Map<String, String>> reportedTicketsList = new ArrayList();
+		log.info("Check build changes as not empty");
 		if (CollectionUtils.isNotEmpty(changes)) {
+			log.info("Changes is not empty, will process changes");
 			Collection<String> tickets = Collections2.transform(changes, new ToTicketFunction(jiraProjects));
 			BasicCredentials creds = new BasicCredentials(jiraUser, jiraPassword);
 			JiraClient jira = new NonVerifingJiraClient(jiraUrl, creds);
@@ -100,28 +197,51 @@ public class StatusPublisherImpl implements StatusPublisher {
 				if (NOT_AN_ISSUE.equals(ticket)) {
 					continue;
 				}
-				log.debug("Processing ticket " + ticket);
+				log.info("Processing ticket " + ticket);
 				try {
 					Issue issue = jira.getIssue(ticket);
-					if (addComment) {
-						log.debug("Adding comment to issue " + ticket);
-						issue.addComment(formatComment(commentFormat, build.getParametersProvider().getAll()));
-					}
-					if (!Iterables
-							.tryFind(issue.getFixVersions(), new FindVersionPredicate(RESOLVE_VERSION))
-							.isPresent()) {
-						List versions = new LinkedList(issue.getFixVersions());
-						versions.add(resolveVersion);
-						issue.update().field(Field.FIX_VERSIONS, versions).execute();
-					}
+					// filter by status and resolution
+					Status status = issue.getStatus();
+					if (status == null || issue.getResolution() == null) {
+						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status.");
+					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName())) {
+						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
+						log.info("Issue: ", issue.getKey());
+					} else {
 
-					if (transitionIssue) {
-						Map<String, String> transitionMap = Splitter.on(",").trimResults().omitEmptyStrings().withKeyValueSeparator(":").split(transitionFormat);
-						Status existingStatus = issue.getStatus();
-						String newStatus = transitionMap.get(existingStatus.getName());
-						if (StringUtils.isNotBlank(newStatus)) {
-							log.debug(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
-							issue.transition().execute(newStatus);
+						log.info("The current ticket [" + ticket + "] will be added to the report list.");
+
+						HashMap<String, String> reportedTicketInfo = new HashMap<String, String>();
+						reportedTicketInfo.put(ISSUE_KEY, issue.getKey());
+						reportedTicketInfo.put(ISSUE_SUMMARY, issue.getSummary());
+						reportedTicketInfo.put(ISSUE_PRIORITY, issue.getPriority().getName());
+						reportedTicketInfo.put(ISSUE_TYPE, issue.getIssueType().getName());
+						reportedTicketInfo.put(ISSUE_AUTOR, issue.getReporter().getDisplayName());
+						reportedTicketInfo.put(ISSUE_RFPNAME, issue.getField("customfield_10700").toString());
+						reportedTicketInfo.put(ISSUE_SUBSYSTEM, issue.getField("customfield_10701").toString());
+						reportedTicketInfo.put(ISSUE_FUNCTION, issue.getField("customfield_10702").toString());
+						reportedTicketsList.add(reportedTicketInfo);
+
+						if (addComment) {
+							log.info("Adding comment to issue " + ticket);
+							issue.addComment(formatComment(commentFormat, build.getParametersProvider().getAll()));
+						}
+						if (!Iterables
+								.tryFind(issue.getFixVersions(), new FindVersionPredicate(RESOLVE_VERSION))
+								.isPresent()) {
+							List versions = new LinkedList(issue.getFixVersions());
+							versions.add(resolveVersion);
+							issue.update().field(Field.FIX_VERSIONS, versions).execute();
+						}
+
+						if (transitionIssue) {
+							Map<String, String> transitionMap = Splitter.on(",").trimResults().omitEmptyStrings().withKeyValueSeparator(":").split(transitionFormat);
+							Status existingStatus = issue.getStatus();
+							String newStatus = transitionMap.get(existingStatus.getName());
+							if (StringUtils.isNotBlank(newStatus)) {
+								log.info(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
+								issue.transition().execute(newStatus);
+							}
 						}
 					}
 				} catch (JiraException e) {
@@ -129,6 +249,281 @@ public class StatusPublisherImpl implements StatusPublisher {
 				}
 			}
 		}
+
+		log.info("Start to create template.");
+
+		Properties properties = System.getProperties();
+
+//		String userFilePath = params.get(REPORT_TEMPLATE_FILE_PATH);
+		String userFileName = params.get(REPORT_TEMPLATE_FILE_NAME);
+		String templatePath = "";
+		String templateName = "";
+//		if (userFilePath == null || userFilePath.isEmpty()) {
+		templatePath = build.getParametersProvider().get("teamcity.build.checkoutDir") + "/src/main/resources/announcements/";
+//		} else {
+//			templatePath = build.getParametersProvider().get("teamcity.build.checkoutDir") + userFilePath;
+//		}
+		if (userFileName == null || userFileName.isEmpty()) {
+			templateName = "announcement.vm";
+		} else {
+			templateName = userFileName;
+		}
+
+		ParametersProvider parametersProvider = build.getParametersProvider();
+
+		long srcRevision = -1;
+
+		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
+			srcRevision = addToSVN(params, processHTML(templatePath, templateName, parametersProvider, reportedTicketsList, build, -1), params.get(SVN_HTMLFILE_NAME));
+			addToSVN(params, processTXT(reportedTicketsList,
+					REPORTTXT_DEFAULT_SUBJECT + parametersProvider.get("build.version.number") + parametersProvider.get("release.const.rc") + parametersProvider.get("build.counter")),
+					params.get(SVN_TXTFILE_NAME));
+		}
+
+		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
+			sendEmails(properties, params, processHTML(templatePath, templateName, build.getParametersProvider(), reportedTicketsList, build, srcRevision), "text/html; charset=UTF-8", build);
+		}
+	}
+
+	private static String processTXT(List<Map<String, String>> reportedTicketList, String reportSubject) {
+		StringBuilder stringBuilder = new StringBuilder();
+
+		stringBuilder.append(reportSubject);
+		stringBuilder.append("\n");
+		if (reportedTicketList == null || reportedTicketList.isEmpty()) {
+			stringBuilder.append("Изменений нет");
+			stringBuilder.append("\n");
+
+			return stringBuilder.toString();
+		}
+		for (Map<String, String> ticketInfo : reportedTicketList) {
+			stringBuilder.append(ticketInfo.get(ISSUE_KEY));
+			stringBuilder.append(": ");
+			stringBuilder.append(ticketInfo.get(ISSUE_SUMMARY));
+			stringBuilder.append("\n");
+		}
+		stringBuilder.append("\n");
+
+		return stringBuilder.toString();
+	}
+
+	private static long addToSVN(Map<String, String> params, String reportContent, String revisionFilePath) {
+		long srcRevision = -1;
+		SVNCommitInfo svnCommitInfo = null;
+
+		try {
+			log.info("Start to init SVN connection.");
+
+			DAVRepositoryFactory.setup();
+
+			String name = params.get(SVN_USER_NAME);
+			String password = params.get(SVN_USER_PASSWORD);
+
+			Iterable<String> urls = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(params.get(SVN_URL));
+
+			for (String url : urls) {
+				SVNRepository repository = SVNRepositoryFactory.create(SVNURL.parseURIEncoded(url));
+
+				ISVNAuthenticationManager authManager = SVNWCUtil.createDefaultAuthenticationManager(name, password);
+
+				repository.setAuthenticationManager(authManager);
+
+				SVNNodeKind nodeKind = repository.checkPath(revisionFilePath, -1);
+
+				SVNProperties fileProperties = new SVNProperties();
+				ByteArrayOutputStream revisionFileServerContent = new ByteArrayOutputStream();
+
+				ISVNEditor editor = null;
+				try {
+					log.info("Start to create template and commit it to SVN.");
+
+					ByteArrayOutputStream mergedFileContent = new ByteArrayOutputStream();
+					mergedFileContent.write(reportContent.getBytes());
+
+					if (nodeKind == SVNNodeKind.NONE) {
+						log.info("There is no entry [ " + revisionFilePath + " ] at '" + url + "'.");
+						log.info("Will be added and commited the new one after report will created.");
+						editor = repository.getCommitEditor("file contents changed", null);
+						svnCommitInfo = addDir(editor, "", revisionFilePath, reportContent.getBytes());
+						log.info("The file was added: " + svnCommitInfo);
+						// info updates because is the current revision should be
+						srcRevision = repository.getLatestRevision();
+					} else if (nodeKind == SVNNodeKind.DIR) {
+						log.info("The entry [ " + revisionFilePath + " ] at '" + url + "' is a directory while a file was expected.");
+					} else if (nodeKind == SVNNodeKind.FILE) {
+						repository.getFile(revisionFilePath, -1, fileProperties, revisionFileServerContent);
+						mergedFileContent.write(revisionFileServerContent.toByteArray());
+						editor = repository.getCommitEditor("file contents changed", null);
+						svnCommitInfo = modifyFile(editor, "", revisionFilePath, revisionFileServerContent.toByteArray(), mergedFileContent.toByteArray());
+						log.info("The file was changed: " + svnCommitInfo);
+						// after updates because is the current revision should be
+						srcRevision = repository.getLatestRevision();
+					}
+				} catch (SVNException svne) {
+					if (editor != null) {
+						editor.abortEdit();
+					}
+					log.error("The error was occurs when tried to commit Jira report file to SVN ", svne);
+					return -1;
+				}
+			}
+		} catch (Exception e) {
+			log.error("The error was occurs when tried to update Jira report file at SVN", e);
+			return -1;
+		}
+		return srcRevision;
+	}
+
+	private static void sendEmails(Properties properties, Map<String, String> params, String reportContent, String typeContent, SRunningBuild build) {
+		try {
+			String emailUserName = params.get(EMAIL_USER_NAME);
+			String emailUserPassword = params.get(EMAIL_USER_PASSWORD);
+			String emailFrom = params.get(EMAIL_FROM);
+			//there cans be more than one e-mail
+			String[] emailsTo = Iterables.toArray(Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(params.get(EMAIL_TO)), String.class);
+			String smtpHost = params.get(EMAIL_SMTP_HOST);
+			String smtpPort = params.get(EMAIL_SMTP_PORT);
+			String smtpAuth = params.get(EMAIL_SMTP_AUTH);
+			String smtpStartTls = params.get(EMAIL_SMTP_STARTTLS);
+
+			properties.setProperty("mail.smtp.host", smtpHost);
+			properties.setProperty("mail.smtp.port", smtpPort);
+			properties.setProperty("mail.smtp.auth", smtpAuth);
+			properties.setProperty("mail.smtp.starttls.enable", smtpStartTls);
+
+			log.info("Start to create template and send it by e-mail.");
+
+			SmtpAuthenticator authentication = new SmtpAuthenticator(emailUserName, emailUserPassword);
+			Session session = Session.getInstance(properties, authentication);
+
+			MimeMessage message = new MimeMessage(session);
+
+			message.setFrom(new InternetAddress(emailFrom));
+			log.info("The Notification e-mail From set.");
+
+			InternetAddress[] internetAdresses = new InternetAddress[emailsTo.length];
+			for (int i = 0; i < internetAdresses.length; i++) {
+				internetAdresses[i] = new InternetAddress(emailsTo[i]);
+			}
+			message.addRecipients(Message.RecipientType.TO,
+					internetAdresses);
+			log.info("The Notification e-mail To set.");
+
+			String subject = params.get(EMAIL_SUBJECT);
+			if (subject == null || subject.isEmpty()) {
+				subject = EMAIL_DEFAULT_SUBJECT + build.getParametersProvider().get("build.version.number") + "RC" + build.getParametersProvider().get("build.counter");
+			}
+			message.setSubject(subject);
+			log.info("The Notification e-mail subject set.");
+
+			message.setContent(reportContent, typeContent);
+			log.info("The Notification e-mail content set.");
+
+			Transport.send(message);
+			log.info("Sent e-mail message successfully....");
+		} catch (MessagingException mex) {
+			mex.printStackTrace();
+		}
+	}
+
+	private static SVNCommitInfo addDir(ISVNEditor editor, String dirPath, String filePath, byte[] data) throws SVNException {
+		log.info("The SVN add Dir|File started.");
+
+		editor.openRoot(-1);
+		log.info("The SVN root opened.");
+
+		editor.addFile(filePath, null, -1);
+		log.info("The SVN file added [" + filePath + "]");
+
+		editor.applyTextDelta(filePath, null);
+		log.info("The SVN text delta applied for [" + filePath + "]");
+
+		SVNDeltaGenerator deltaGenerator = new SVNDeltaGenerator();
+		String checksum = deltaGenerator.sendDelta(filePath, new ByteArrayInputStream(data), editor, true);
+		log.info("The SVN text delta sent for [" + filePath + "]");
+
+		editor.closeFile(filePath, checksum);
+		log.info("The SVN Editor closed the file");
+
+		//Closes dirPath.
+		editor.closeDir();
+		log.info("The SVN Editor closed the directory");
+
+		return editor.closeEdit();
+	}
+
+	private static SVNCommitInfo modifyFile(ISVNEditor editor, String dirPath, String filePath, byte[] oldData, byte[] newData) throws SVNException {
+		log.info("The SVN modify Dir|File started.");
+
+		editor.openRoot(-1);
+		log.info("The SVN root opened.");
+
+		editor.openFile(filePath, -1);
+		log.info("The SVN file opened [" + filePath + "]");
+
+		editor.applyTextDelta(filePath, null);
+		log.info("The SVN text delta applied for [" + filePath + "]");
+
+		SVNDeltaGenerator deltaGenerator = new SVNDeltaGenerator();
+		String checksum = deltaGenerator.sendDelta(filePath, new ByteArrayInputStream(oldData), 0, new ByteArrayInputStream(newData), editor, true);
+		log.info("The SVN text delta sent for [" + filePath + "]");
+
+		//Closes filePath.
+		editor.closeFile(filePath, checksum);
+		log.info("The SVN Editor closed the file");
+
+		// Closes dirPath.
+		editor.closeDir();
+		log.info("The SVN Editor closed the directory");
+
+		return editor.closeEdit();
+	}
+
+	//templatePath == build.getParametersProvider().get("teamcity.build.checkoutDir") + params.get(REPORT_TEMPLATE_FILE_PATH) + System.getProperty("file.separator")
+	public String processHTML(String templatePath, String templateName, ParametersProvider parametersProvider, List<Map<String, String>> reportedTicketsList, SRunningBuild build, long srcRevision) {
+		log.info("The process template report started.");
+
+		VelocityEngine ve = new VelocityEngine();
+		ve.setProperty("file.resource.loader.path", templatePath);
+		ve.init();
+		Template t = ve.getTemplate(templateName, "UTF-8");//getTemplate(templateName);
+
+		log.info("The template report blank created.");
+
+		VelocityContext context = new VelocityContext();
+
+		log.info("The template report parameters start to set...");
+
+		String developmentTeamName = parametersProvider.get("development.team.name");
+		if (developmentTeamName == null || developmentTeamName.isEmpty()) {
+			developmentTeamName = DEFAULT_DEVELOPMENT_TEAM_NAME;
+		}
+		context.put(DEVELOPMENT_TEAM_NAME, developmentTeamName);
+		context.put(BUILD_VERSION_NUMBER, parametersProvider.get("build.version.number"));
+		context.put(BUILD_BRANCH, parametersProvider.get("build.branch"));
+		context.put(RELEASE_VERSION, parametersProvider.get("release.version"));
+		context.put(RELEASE_CONST_RC, parametersProvider.get("release.const.rc"));
+		context.put(RELEASE_BUILD_COUNTER, parametersProvider.get("build.counter"));
+		context.put(BUILD_TRIGGERED_BY, build.getTriggeredBy().getAsString());
+		String revisionNumber = "";
+		if (srcRevision > 0) {
+			revisionNumber = "?p=" + srcRevision;
+		}
+		context.put(CVS_REVISION_NUMBER, revisionNumber);
+
+		context.put(ISSUE_LIST, reportedTicketsList);
+
+		log.info("The template report parameters was set successfully.");
+
+		StringWriter writer = new StringWriter();
+
+		log.info("The template report will start to merge the context with the parameters.");
+
+		t.merge(context, writer);
+
+		log.info("The template report was merged and created successfully.");
+
+		return writer.toString();
 	}
 
 	private String formatComment(String commentFormat, Map<String, String> args) {
@@ -155,10 +550,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 				jiraProject = jiraProject.endsWith("-") ? StringUtils.removeEnd(jiraProject, "-") : jiraProject;
 				Pattern pattern = Pattern.compile("(" + jiraProject + "-\\d+)[:]?\\s.*");
 				final Matcher matcher = pattern.matcher(commitMsg);
-				log.debug("Commit msg [" + commitMsg + "] " + (matcher.matches() ? " matches " : " skipped"));
+				log.info("Commit msg [" + commitMsg + "] " + (matcher.matches() ? " matches " : " skipped"));
 				if (matcher.matches()) {
 					String ticket = matcher.group(1);
-					log.debug("Got ticket " + ticket);
+					log.info("Got ticket " + ticket);
 					return ticket;
 				}
 			}
