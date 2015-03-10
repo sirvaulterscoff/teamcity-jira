@@ -25,6 +25,7 @@ import java.util.List;
  * @since 26.01.2015
  */
 public class BuildStatusListener extends BuildServerAdapter {
+	protected static final Logger log = LoggerFactory.getLogger(BuildStatusListener.class);
 
 	private final PublisherStatusManager myPublisherManager;
 	private final BuildHistory myBuildHistory;
@@ -42,15 +43,20 @@ public class BuildStatusListener extends BuildServerAdapter {
 
 	@Override
 	public void buildFinished(@NotNull SRunningBuild build) {
+		log.info("Check for process after build finished for build: " + build.getFullName());
 		final SBuildType buildType = build.getBuildType();
 		if(buildType == null) {
 			return;
 		}
-		getPublishers(buildType).buildFinished(build);
+		StatusPublisher statusPublisher = getPublishers(buildType);
+		if (statusPublisher != null) {
+			statusPublisher.buildFinished(build);
+		}
 	}
 
 	@Nullable
 	private StatusPublisher getPublishers(@NotNull SBuildType buildType) {
+		log.info("Getting publishers for build type: " + buildType.getName());
 		for (SBuildFeatureDescriptor buildFeatureDescriptor : buildType.getResolvedSettings().getBuildFeatures()) {
 			BuildFeature buildFeature = buildFeatureDescriptor.getBuildFeature();
 			if (buildFeature instanceof PublishStatusBuildFeature) {
@@ -59,6 +65,7 @@ public class BuildStatusListener extends BuildServerAdapter {
 					return publisher;
 			}
 		}
+		log.info("Getting build features for build type " + buildType.getName() + " will return null");
 		return null;
 	}
 }
