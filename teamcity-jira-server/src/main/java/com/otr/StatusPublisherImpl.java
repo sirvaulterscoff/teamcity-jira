@@ -76,6 +76,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String PLACEHOLDER_PREFIX = "#{";
 	public static final String PLACEHOLDER_SUFFIX = "}";
 	public static final String SPLITTER = ",";
+	public static final String PAIR_SPLITTER = ":";
 
 	public static final String NOT_AN_ISSUE = "not-issue";
 
@@ -113,9 +114,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String SVN_TXTFILE_NAME = "svnTXTFileName";
 
 	public static final String EMAIL_SUBJECT = "emailSubject";
-	public static final String EMAIL_DEFAULT_SUBJECT = "UFOS-CORE RELEASE ";
+	public static final String EMAIL_DEFAULT_SUBJECT = "Announcement Notification";
 
-	public static final String REPORTTXT_DEFAULT_SUBJECT = "";
+	public static final String REPORTTXT_DEFAULT_SUBJECT = "The report about the next changes:";
 
 	//	public static final String REPORT_FILE_PATH = "reportFilePath";
 //	public static final String REPORT_FILE_NAME = "reportFileName";
@@ -125,23 +126,19 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String DEVELOPMENT_TEAM_NAME = "developmentTeam";
 	public static final String DEFAULT_DEVELOPMENT_TEAM_NAME = "Our Development Team";
 
-	public static String BUILD_BRANCH = "buildBranch";
-	public static String BUILD_VERSION_NUMBER = "buildVersionNumber";
-	public static String RELEASE_CONST_RC = "releaseConstRC";
-	public static String RELEASE_BUILD_COUNTER = "releaseBuildCounter";
-	public static String RELEASE_VERSION = "releaseVersion";
-	public static String BUILD_TRIGGERED_BY = "triggeredBy";
-	public static String CVS_REVISION_NUMBER = "cvsRevisionNumber";
+	public static final String BUILD_TRIGGERED_BY = "triggeredBy";
+	public static final String CVS_REVISION_NUMBER = "cvsRevisionNumber";
 
-	public static String ISSUE_LIST = "issueList";
-	public static String ISSUE_KEY = "issueKey";
-	public static String ISSUE_SUMMARY = "issueSummary";
-	public static String ISSUE_TYPE = "issueType";
-	public static String ISSUE_PRIORITY = "issuePriority";
-	public static String ISSUE_AUTOR = "issueAutor";
-	public static String ISSUE_RFPNAME = "issueRFPName";
-	public static String ISSUE_SUBSYSTEM = "issueSubsystem";
-	public static String ISSUE_FUNCTION = "issueFunction";
+	public static final String ISSUE_LIST = "issueList";
+
+	public static final String ISSUE_KEY = "issueKey";
+	public static final String ISSUE_SUMMARY = "issueSummary";
+	public static final String ISSUE_TYPE = "issueType";
+	public static final String ISSUE_PRIORITY = "issuePriority";
+	public static final String ISSUE_AUTOR = "issueAutor";
+
+	public static final String CUSTOM_JIRA_PARAMETERS = "customJiraParameters";
+	public static final String CUSTOM_USER_PARAMETERS = "customUserParameters";
 
 	private Map<String, String> params;
 
@@ -150,12 +147,15 @@ public class StatusPublisherImpl implements StatusPublisher {
 	}
 
 	public void buildFinished(SRunningBuild build) {
+		ParametersProvider parametersProvider = build.getParametersProvider();
+		Map<String, String> parametersProviderAll = parametersProvider.getAll();
+		Map<String, String> customJiraParameters = buildParametersMap(params.get(CUSTOM_JIRA_PARAMETERS), parametersProviderAll);
 		log.info("Start process after build finished");
-		String jiraProjectsStr = params.get(JIRA_PROJECT_KEYS);
+		String jiraProjectsStr = formatComment(params.get(JIRA_PROJECT_KEYS), parametersProviderAll);
 		Iterable<String> jiraProjects = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(jiraProjectsStr);
 		boolean addComment = Boolean.parseBoolean(params.get(ADD_COMMENT));
 		String commentFormat = params.get(COMMENT_FORMAT);
-		String jiraStatusIdsList = params.get(JIRA_STATUS_IDS);
+		String jiraStatusIdsList = formatComment(params.get(JIRA_STATUS_IDS), parametersProviderAll);
 		String[] jiraStatusIds;
 		if (jiraStatusIdsList != null) {
 			jiraStatusIds = jiraStatusIdsList.trim().split(SPLITTER);
@@ -163,7 +163,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 			jiraStatusIds = new String[1];
 			jiraStatusIds[0] = JIRA_DEFAULT_STATUS_IDS;
 		}
-		String jiraResolutionIdsList = params.get(JIRA_RESOLUTION_IDS);
+		String jiraResolutionIdsList = formatComment(params.get(JIRA_RESOLUTION_IDS), parametersProviderAll);
 		String[] jiraResolutionIds;
 		if (jiraResolutionIdsList != null) {
 			jiraResolutionIds = jiraResolutionIdsList.trim().split(SPLITTER);
@@ -171,13 +171,13 @@ public class StatusPublisherImpl implements StatusPublisher {
 			jiraResolutionIds = new String[1];
 			jiraResolutionIds[0] = JIRA_DEFAULT_RESOLUTION_IDS;
 		}
-		String resolveVersion = params.get(RESOLVE_VERSION);
-		String jiraUrl = params.get(JIRA_URL);
-		String jiraUser = params.get(JIRA_USER);
-		String jiraPassword = params.get(JIRA_PASSWORD);
+		String resolveVersion = formatComment(params.get(RESOLVE_VERSION), parametersProviderAll);
+		String jiraUrl = formatComment(params.get(JIRA_URL), parametersProviderAll);
+		String jiraUser = formatComment(params.get(JIRA_USER), parametersProviderAll);
+		String jiraPassword = formatComment(params.get(JIRA_PASSWORD), parametersProviderAll);
 
 		boolean transitionIssue = Boolean.parseBoolean(params.get(TRANSITION_ISSUE));
-		String transitionFormat = params.get(TRANSITION_FORMAT);
+		String transitionFormat = formatComment(params.get(TRANSITION_FORMAT), parametersProviderAll);
 
 		List<SVcsModification> changes = build.getChanges(SelectPrevBuildPolicy.SINCE_LAST_SUCCESSFULLY_FINISHED_BUILD, true);
 		List<Map<String, String>> reportedTicketsList = new ArrayList();
@@ -217,9 +217,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 						reportedTicketInfo.put(ISSUE_PRIORITY, issue.getPriority().getName());
 						reportedTicketInfo.put(ISSUE_TYPE, issue.getIssueType().getName());
 						reportedTicketInfo.put(ISSUE_AUTOR, issue.getReporter().getDisplayName());
-						reportedTicketInfo.put(ISSUE_RFPNAME, issue.getField("customfield_10700").toString());
-						reportedTicketInfo.put(ISSUE_SUBSYSTEM, issue.getField("customfield_10701").toString());
-						reportedTicketInfo.put(ISSUE_FUNCTION, issue.getField("customfield_10702").toString());
+						if (customJiraParameters != null) {
+							for (String key : customJiraParameters.keySet()) {
+								reportedTicketInfo.put(customJiraParameters.get(key), issue.getField(key).toString());
+							}
+						}
 						reportedTicketsList.add(reportedTicketInfo);
 
 						if (addComment) {
@@ -255,7 +257,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 		Properties properties = System.getProperties();
 
 //		String userFilePath = params.get(REPORT_TEMPLATE_FILE_PATH);
-		String userFileName = params.get(REPORT_TEMPLATE_FILE_NAME);
+		String userFileName = formatComment(params.get(REPORT_TEMPLATE_FILE_NAME), parametersProviderAll);
 		String templatePath = "";
 		String templateName = "";
 //		if (userFilePath == null || userFilePath.isEmpty()) {
@@ -269,20 +271,39 @@ public class StatusPublisherImpl implements StatusPublisher {
 			templateName = userFileName;
 		}
 
-		ParametersProvider parametersProvider = build.getParametersProvider();
-
 		long srcRevision = -1;
 
+		Map<String, String> customUserParameters = buildParametersMap(params.get(CUSTOM_USER_PARAMETERS), parametersProviderAll);
+
+		Map<String, String> customParameters = new HashMap<String, String>(customUserParameters);
+
 		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
-			srcRevision = addToSVN(params, processHTML(templatePath, templateName, parametersProvider, reportedTicketsList, build, -1), params.get(SVN_HTMLFILE_NAME));
+			srcRevision = addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, -1), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
 			addToSVN(params, processTXT(reportedTicketsList,
-					REPORTTXT_DEFAULT_SUBJECT + parametersProvider.get("build.version.number") + parametersProvider.get("release.const.rc") + parametersProvider.get("build.counter")),
-					params.get(SVN_TXTFILE_NAME));
+							REPORTTXT_DEFAULT_SUBJECT + parametersProvider.get("build.version.number") + parametersProvider.get("release.const.rc") + parametersProvider.get("build.counter")),
+					formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
 		}
 
 		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
-			sendEmails(properties, params, processHTML(templatePath, templateName, build.getParametersProvider(), reportedTicketsList, build, srcRevision), "text/html; charset=UTF-8", build);
+			sendEmails(properties, params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, srcRevision), "text/html; charset=UTF-8", build.getParametersProvider());
 		}
+	}
+
+	private static Map<String, String> buildParametersMap(String sourceParameters, Map<String, String> tcParameters) {
+		Map<String, String> parameters = new HashMap<String, String>();
+
+		Iterable<String> parameterPairs = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(sourceParameters);
+		for (String parameterPair : parameterPairs) {
+			Iterable<String> parameter = Splitter.on(PAIR_SPLITTER).trimResults().omitEmptyStrings().split(parameterPair);
+			Iterator<String> parameterIterator = parameter.iterator();
+			try {
+				parameters.put(parameterIterator.next(), formatComment(parameterIterator.next(), tcParameters));
+			} catch (NoSuchElementException e) {
+				log.info("Wrong parameters definition. Parameters map should be like follow: source_parameter_1:target_parameter_1,source_parameter_2:target_parameter_2");
+			}
+
+		}
+		return parameters;
 	}
 
 	private static String processTXT(List<Map<String, String>> reportedTicketList, String reportSubject) {
@@ -374,17 +395,28 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return srcRevision;
 	}
 
-	private static void sendEmails(Properties properties, Map<String, String> params, String reportContent, String typeContent, SRunningBuild build) {
+	private static Map<String, String> process(Map<String, String> source, Map<String, String> tcParameters) {
+		Map<String, String> result = new HashMap<String, String>();
+
+		for (String key : source.keySet()) {
+			result.put(key, tcParameters.get(source.get(key)));
+		}
+
+		return result;
+	}
+
+	private static void sendEmails(Properties properties, Map<String, String> params, String reportContent, String typeContent, ParametersProvider parametersProvider) {
 		try {
-			String emailUserName = params.get(EMAIL_USER_NAME);
-			String emailUserPassword = params.get(EMAIL_USER_PASSWORD);
-			String emailFrom = params.get(EMAIL_FROM);
+			Map<String, String> parametersProviderAll = parametersProvider.getAll();
+			String emailUserName = formatComment(params.get(EMAIL_USER_NAME), parametersProviderAll);
+			String emailUserPassword = formatComment(params.get(EMAIL_USER_PASSWORD), parametersProviderAll);
+			String emailFrom = formatComment(params.get(EMAIL_FROM), parametersProviderAll);
 			//there cans be more than one e-mail
-			String[] emailsTo = Iterables.toArray(Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(params.get(EMAIL_TO)), String.class);
-			String smtpHost = params.get(EMAIL_SMTP_HOST);
-			String smtpPort = params.get(EMAIL_SMTP_PORT);
-			String smtpAuth = params.get(EMAIL_SMTP_AUTH);
-			String smtpStartTls = params.get(EMAIL_SMTP_STARTTLS);
+			String[] emailsTo = Iterables.toArray(Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(formatComment(params.get(EMAIL_TO), parametersProviderAll)), String.class);
+			String smtpHost = formatComment(params.get(EMAIL_SMTP_HOST), parametersProviderAll);
+			String smtpPort = formatComment(params.get(EMAIL_SMTP_PORT), parametersProviderAll);
+			String smtpAuth = formatComment(params.get(EMAIL_SMTP_AUTH), parametersProviderAll);
+			String smtpStartTls = formatComment(params.get(EMAIL_SMTP_STARTTLS), parametersProviderAll);
 
 			properties.setProperty("mail.smtp.host", smtpHost);
 			properties.setProperty("mail.smtp.port", smtpPort);
@@ -411,9 +443,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 			String subject = params.get(EMAIL_SUBJECT);
 			if (subject == null || subject.isEmpty()) {
-				subject = EMAIL_DEFAULT_SUBJECT + build.getParametersProvider().get("build.version.number") + "RC" + build.getParametersProvider().get("build.counter");
+				subject = EMAIL_DEFAULT_SUBJECT;
 			}
-			message.setSubject(subject);
+
+			message.setSubject(formatComment(subject, parametersProviderAll));
 			log.info("The Notification e-mail subject set.");
 
 			message.setContent(reportContent, typeContent);
@@ -480,13 +513,15 @@ public class StatusPublisherImpl implements StatusPublisher {
 	}
 
 	//templatePath == build.getParametersProvider().get("teamcity.build.checkoutDir") + params.get(REPORT_TEMPLATE_FILE_PATH) + System.getProperty("file.separator")
-	public String processHTML(String templatePath, String templateName, ParametersProvider parametersProvider, List<Map<String, String>> reportedTicketsList, SRunningBuild build, long srcRevision) {
+	public String processHTML(String templatePath, String templateName, List<Map<String, String>> reportedTicketsList, Map<String, String> customParameters, SRunningBuild build, long srcRevision) {
 		log.info("The process template report started.");
+
+		ParametersProvider parametersProvider = build.getParametersProvider();
 
 		VelocityEngine ve = new VelocityEngine();
 		ve.setProperty("file.resource.loader.path", templatePath);
 		ve.init();
-		Template t = ve.getTemplate(templateName, "UTF-8");//getTemplate(templateName);
+		Template t = ve.getTemplate(templateName, "UTF-8");
 
 		log.info("The template report blank created.");
 
@@ -499,11 +534,6 @@ public class StatusPublisherImpl implements StatusPublisher {
 			developmentTeamName = DEFAULT_DEVELOPMENT_TEAM_NAME;
 		}
 		context.put(DEVELOPMENT_TEAM_NAME, developmentTeamName);
-		context.put(BUILD_VERSION_NUMBER, parametersProvider.get("build.version.number"));
-		context.put(BUILD_BRANCH, parametersProvider.get("build.branch"));
-		context.put(RELEASE_VERSION, parametersProvider.get("release.version"));
-		context.put(RELEASE_CONST_RC, parametersProvider.get("release.const.rc"));
-		context.put(RELEASE_BUILD_COUNTER, parametersProvider.get("build.counter"));
 		context.put(BUILD_TRIGGERED_BY, build.getTriggeredBy().getAsString());
 		String revisionNumber = "";
 		if (srcRevision > 0) {
@@ -512,6 +542,12 @@ public class StatusPublisherImpl implements StatusPublisher {
 		context.put(CVS_REVISION_NUMBER, revisionNumber);
 
 		context.put(ISSUE_LIST, reportedTicketsList);
+
+		if (customParameters != null) {
+			for (String customKey : customParameters.keySet()) {
+				context.put(customKey, customParameters.get(customKey));
+			}
+		}
 
 		log.info("The template report parameters was set successfully.");
 
@@ -526,8 +562,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return writer.toString();
 	}
 
-	private String formatComment(String commentFormat, Map<String, String> args) {
+	private static String formatComment(String commentFormat, Map<String, String> args) {
 		String out = commentFormat;
+		if (commentFormat == null)
+			return out;
 		for (String arg : args.keySet()) {
 			out = Pattern.compile(Pattern.quote(PLACEHOLDER_PREFIX + arg + PLACEHOLDER_SUFFIX)).
 					matcher(out).

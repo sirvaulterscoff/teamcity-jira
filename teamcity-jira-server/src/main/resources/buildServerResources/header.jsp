@@ -39,6 +39,7 @@
 		<li class=""><p><a href="#tab4">Notification E-Mail</a></p></li>
 		<li class=""><p><a href="#tab5">Notification E-Mail SMTP</a></p></li>
 		<li class=""><p><a href="#tab6">SVN</a></p></li>
+		<li class=""><p><a href="#tab7">Report template</a></p></li>
 	</ul>
 	<div class="custom-scroll">
 		<div id="tab1" class="tabContent" style="display: none;">
@@ -258,6 +259,24 @@
 					<td><label for="svnTXTFileName">SVN TXT Report target file name:&nbsp;<l:star/></label></td>
 					<td>
 						<props:textProperty name="svnTXTFileName" className="stringField"/>
+					</td>
+				</tr>
+				</tbody>
+			</table>
+		</div>
+		<div id="tab7" class="tabContent" style="display: none;">
+			<table class="runnerFormTable wideLabel buildParameters">
+				<tbody>
+				<tr>
+					<td><label for="customJiraParameters">Map custom Jira parameters:&nbsp;</label></td>
+					<td>
+						<props:textProperty name="customJiraParameters" className="stringField"/>
+					</td>
+				</tr>
+				<tr>
+					<td><label for="customUserParameters">Map custom user parameters:&nbsp;</label></td>
+					<td>
+						<props:textProperty name="customUserParameters" className="stringField"/>
 					</td>
 				</tr>
 				</tbody>

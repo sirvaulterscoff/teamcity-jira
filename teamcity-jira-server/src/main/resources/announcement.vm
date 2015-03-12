@@ -399,7 +399,7 @@
 		<hr/>
 	</div>
 	<div class="xleft">
-		<span id="projectVersion">Версия: $buildBranch</span>
+		<span id="projectVersion">Версия: $</span>
 
 		<div class="clear">
 			<hr/>
