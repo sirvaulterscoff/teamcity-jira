@@ -279,6 +279,12 @@
 						<props:textProperty name="customUserParameters" className="stringField"/>
 					</td>
 				</tr>
+				<tr>
+					<td><label for="reportTxtCommitSubject">Report txt file header subject:&nbsp;</label></td>
+					<td>
+						<props:textProperty name="reportTxtCommitSubject" className="stringField"/>
+					</td>
+				</tr>
 				</tbody>
 			</table>
 		</div>

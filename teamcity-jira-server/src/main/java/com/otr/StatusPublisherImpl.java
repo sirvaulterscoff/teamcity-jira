@@ -117,6 +117,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String EMAIL_DEFAULT_SUBJECT = "Announcement Notification";
 
 	public static final String REPORTTXT_DEFAULT_SUBJECT = "The report about the next changes:";
+	public static final String REPORTTXT_COMMIT_SUBJECT = "reportTxtCommitSubject";
 
 	//	public static final String REPORT_FILE_PATH = "reportFilePath";
 //	public static final String REPORT_FILE_NAME = "reportFileName";
@@ -184,9 +185,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 		log.info("Check build changes as not empty");
 		if (CollectionUtils.isNotEmpty(changes)) {
 			log.info("Changes is not empty, will process changes");
-			Collection<List<String>> ticketGroups = Collections2.transform(changes, new ToTicketFunction(jiraProjects));
-			List<String> tickets = new ArrayList<String>();
-			for (List<String> ticketGroup : ticketGroups) {
+			Collection<Set<String>> ticketGroups = Collections2.transform(changes, new ToTicketFunction(jiraProjects));
+			Set<String> tickets = new HashSet<String>();
+			for (Set<String> ticketGroup : ticketGroups) {
 				tickets.addAll(ticketGroup);
 			}
 			BasicCredentials creds = new BasicCredentials(jiraUser, jiraPassword);
@@ -281,14 +282,15 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 		Map<String, String> customParameters = new HashMap<String, String>(customUserParameters);
 
-		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
+		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
 			srcRevision = addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, -1), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
+			String txtSubject = formatComment(params.get(REPORTTXT_COMMIT_SUBJECT), parametersProviderAll);
 			addToSVN(params, processTXT(reportedTicketsList,
-							REPORTTXT_DEFAULT_SUBJECT + parametersProvider.get("build.version.number") + parametersProvider.get("release.const.rc") + parametersProvider.get("build.counter")),
+							REPORTTXT_DEFAULT_SUBJECT + txtSubject),
 					formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
 		}
 
-		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
+		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
 			sendEmails(properties, params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, srcRevision), "text/html; charset=UTF-8", build.getParametersProvider());
 		}
 	}
@@ -369,7 +371,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						log.info("There is no entry [ " + revisionFilePath + " ] at '" + url + "'.");
 						log.info("Will be added and commited the new one after report will created.");
 						editor = repository.getCommitEditor("file contents changed", null);
-						svnCommitInfo = addDir(editor, "", reportContent.getBytes());
+						svnCommitInfo = addDir(editor, revisionFilePath, reportContent.getBytes());
 						log.info("The file was added: " + svnCommitInfo);
 						// info updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
@@ -379,7 +381,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						repository.getFile(revisionFilePath, -1, fileProperties, revisionFileServerContent);
 						mergedFileContent.write(revisionFileServerContent.toByteArray());
 						editor = repository.getCommitEditor("file contents changed", null);
-						svnCommitInfo = modifyFile(editor, "", revisionFileServerContent.toByteArray(), mergedFileContent.toByteArray());
+						svnCommitInfo = modifyFile(editor, revisionFilePath, revisionFileServerContent.toByteArray(), mergedFileContent.toByteArray());
 						log.info("The file was changed: " + svnCommitInfo);
 						// after updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
@@ -565,17 +567,17 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return out;
 	}
 
-	private class ToTicketFunction implements Function<SVcsModification, List<String>> {
+	private class ToTicketFunction implements Function<SVcsModification, Set<String>> {
 		private Iterable<String> jiraProjects;
 
 		private ToTicketFunction(Iterable<String> jiraProjects) {
 			this.jiraProjects = jiraProjects;
 		}
 
-		public List<String> apply(SVcsModification input) {
+		public Set<String> apply(SVcsModification input) {
 			String commitMsg = input.getDescription();
 			Iterable<String> commitMsgs = Splitter.on("\n").omitEmptyStrings().trimResults().split(commitMsg);//.iterator().next();
-			List<String> result = new ArrayList<String>();
+			Set<String> result = new HashSet<String>();
 			for (String msg : commitMsgs) {
 				for (String jiraProject : jiraProjects) {
 					jiraProject = jiraProject.endsWith("-") ? StringUtils.removeEnd(jiraProject, "-") : jiraProject;
