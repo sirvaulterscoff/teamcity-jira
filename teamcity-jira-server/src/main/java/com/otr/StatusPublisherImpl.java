@@ -184,7 +184,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 		log.info("Check build changes as not empty");
 		if (CollectionUtils.isNotEmpty(changes)) {
 			log.info("Changes is not empty, will process changes");
-			Collection<String> tickets = Collections2.transform(changes, new ToTicketFunction(jiraProjects));
+			Collection<List<String>> ticketGroups = Collections2.transform(changes, new ToTicketFunction(jiraProjects));
+			List<String> tickets = new ArrayList<String>();
+			for (List<String> ticketGroup : ticketGroups) {
+				tickets.addAll(ticketGroup);
+			}
 			BasicCredentials creds = new BasicCredentials(jiraUser, jiraPassword);
 			JiraClient jira = new NonVerifingJiraClient(jiraUrl, creds);
 			try {
@@ -365,7 +369,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						log.info("There is no entry [ " + revisionFilePath + " ] at '" + url + "'.");
 						log.info("Will be added and commited the new one after report will created.");
 						editor = repository.getCommitEditor("file contents changed", null);
-						svnCommitInfo = addDir(editor, "", revisionFilePath, reportContent.getBytes());
+						svnCommitInfo = addDir(editor, "", reportContent.getBytes());
 						log.info("The file was added: " + svnCommitInfo);
 						// info updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
@@ -375,7 +379,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						repository.getFile(revisionFilePath, -1, fileProperties, revisionFileServerContent);
 						mergedFileContent.write(revisionFileServerContent.toByteArray());
 						editor = repository.getCommitEditor("file contents changed", null);
-						svnCommitInfo = modifyFile(editor, "", revisionFilePath, revisionFileServerContent.toByteArray(), mergedFileContent.toByteArray());
+						svnCommitInfo = modifyFile(editor, "", revisionFileServerContent.toByteArray(), mergedFileContent.toByteArray());
 						log.info("The file was changed: " + svnCommitInfo);
 						// after updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
@@ -393,16 +397,6 @@ public class StatusPublisherImpl implements StatusPublisher {
 			return -1;
 		}
 		return srcRevision;
-	}
-
-	private static Map<String, String> process(Map<String, String> source, Map<String, String> tcParameters) {
-		Map<String, String> result = new HashMap<String, String>();
-
-		for (String key : source.keySet()) {
-			result.put(key, tcParameters.get(source.get(key)));
-		}
-
-		return result;
 	}
 
 	private static void sendEmails(Properties properties, Map<String, String> params, String reportContent, String typeContent, ParametersProvider parametersProvider) {
@@ -459,7 +453,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 		}
 	}
 
-	private static SVNCommitInfo addDir(ISVNEditor editor, String dirPath, String filePath, byte[] data) throws SVNException {
+	private static SVNCommitInfo addDir(ISVNEditor editor, String filePath, byte[] data) throws SVNException {
 		log.info("The SVN add Dir|File started.");
 
 		editor.openRoot(-1);
@@ -478,14 +472,13 @@ public class StatusPublisherImpl implements StatusPublisher {
 		editor.closeFile(filePath, checksum);
 		log.info("The SVN Editor closed the file");
 
-		//Closes dirPath.
 		editor.closeDir();
 		log.info("The SVN Editor closed the directory");
 
 		return editor.closeEdit();
 	}
 
-	private static SVNCommitInfo modifyFile(ISVNEditor editor, String dirPath, String filePath, byte[] oldData, byte[] newData) throws SVNException {
+	private static SVNCommitInfo modifyFile(ISVNEditor editor, String filePath, byte[] oldData, byte[] newData) throws SVNException {
 		log.info("The SVN modify Dir|File started.");
 
 		editor.openRoot(-1);
@@ -501,11 +494,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 		String checksum = deltaGenerator.sendDelta(filePath, new ByteArrayInputStream(oldData), 0, new ByteArrayInputStream(newData), editor, true);
 		log.info("The SVN text delta sent for [" + filePath + "]");
 
-		//Closes filePath.
 		editor.closeFile(filePath, checksum);
 		log.info("The SVN Editor closed the file");
 
-		// Closes dirPath.
 		editor.closeDir();
 		log.info("The SVN Editor closed the directory");
 
@@ -574,28 +565,34 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return out;
 	}
 
-	private class ToTicketFunction implements Function<SVcsModification, String> {
+	private class ToTicketFunction implements Function<SVcsModification, List<String>> {
 		private Iterable<String> jiraProjects;
 
 		private ToTicketFunction(Iterable<String> jiraProjects) {
 			this.jiraProjects = jiraProjects;
 		}
 
-		public String apply(SVcsModification input) {
+		public List<String> apply(SVcsModification input) {
 			String commitMsg = input.getDescription();
-			commitMsg = Splitter.on("\n").omitEmptyStrings().trimResults().split(commitMsg).iterator().next();
-			for (String jiraProject : jiraProjects) {
-				jiraProject = jiraProject.endsWith("-") ? StringUtils.removeEnd(jiraProject, "-") : jiraProject;
-				Pattern pattern = Pattern.compile("(" + jiraProject + "-\\d+)[:]?\\s.*");
-				final Matcher matcher = pattern.matcher(commitMsg);
-				log.info("Commit msg [" + commitMsg + "] " + (matcher.matches() ? " matches " : " skipped"));
-				if (matcher.matches()) {
-					String ticket = matcher.group(1);
-					log.info("Got ticket " + ticket);
-					return ticket;
+			Iterable<String> commitMsgs = Splitter.on("\n").omitEmptyStrings().trimResults().split(commitMsg);//.iterator().next();
+			List<String> result = new ArrayList<String>();
+			for (String msg : commitMsgs) {
+				for (String jiraProject : jiraProjects) {
+					jiraProject = jiraProject.endsWith("-") ? StringUtils.removeEnd(jiraProject, "-") : jiraProject;
+					Pattern pattern = Pattern.compile("^(" + jiraProject + "-\\d+)[:]?\\s.*");
+					final Matcher matcher = pattern.matcher(msg);
+					log.info("Commit msg [" + msg + "] " + (matcher.matches() ? " matches " : " skipped"));
+					if (matcher.matches()) {
+						String ticket = matcher.group(1);
+						result.add(ticket);
+						log.info("Got ticket " + ticket);
+					}
 				}
 			}
-			return NOT_AN_ISSUE;
+			if (result.isEmpty()) {
+				result.add(NOT_AN_ISSUE);
+			}
+			return result;
 		}
 	}
 
