@@ -285,6 +285,12 @@
 						<props:textProperty name="reportTxtCommitSubject" className="stringField"/>
 					</td>
 				</tr>
+				<tr>
+					<td><label for="reportTxtCommitEmptyIssueList">Report txt file message if empty issue list:&nbsp;</label></td>
+					<td>
+						<props:textProperty name="reportTxtCommitEmptyIssueList" className="stringField"/>
+					</td>
+				</tr>
 				</tbody>
 			</table>
 		</div>

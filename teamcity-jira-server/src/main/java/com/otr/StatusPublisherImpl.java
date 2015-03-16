@@ -118,6 +118,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 	public static final String REPORTTXT_DEFAULT_SUBJECT = "The report about the next changes:";
 	public static final String REPORTTXT_COMMIT_SUBJECT = "reportTxtCommitSubject";
+	public static final String REPORTTXT_COMMIT_EMPTY_ISSUELIST = "reportTxtCommitEmptyIssueList";
 
 	//	public static final String REPORT_FILE_PATH = "reportFilePath";
 //	public static final String REPORT_FILE_NAME = "reportFileName";
@@ -284,10 +285,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
 			srcRevision = addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, -1), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
+
 			String txtSubject = formatComment(params.get(REPORTTXT_COMMIT_SUBJECT), parametersProviderAll);
-			addToSVN(params, processTXT(reportedTicketsList,
-							REPORTTXT_DEFAULT_SUBJECT + txtSubject),
-					formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
+			String txtEmptyIssueMessage = formatComment(params.get(REPORTTXT_COMMIT_EMPTY_ISSUELIST), parametersProviderAll);
+			addToSVN(params, processTXT(reportedTicketsList, txtSubject, txtEmptyIssueMessage), formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
 		}
 
 		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
@@ -312,13 +313,14 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return parameters;
 	}
 
-	private static String processTXT(List<Map<String, String>> reportedTicketList, String reportSubject) {
+	private static String processTXT(List<Map<String, String>> reportedTicketList, String reportSubject, String emptyIssueListMessage) {
 		StringBuilder stringBuilder = new StringBuilder();
 
 		stringBuilder.append(reportSubject);
 		stringBuilder.append("\n");
 		if (reportedTicketList == null || reportedTicketList.isEmpty()) {
-			stringBuilder.append("Изменений нет");
+			stringBuilder.append(emptyIssueListMessage);
+			stringBuilder.append("\n");
 			stringBuilder.append("\n");
 
 			return stringBuilder.toString();
