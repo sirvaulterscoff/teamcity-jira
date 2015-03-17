@@ -208,12 +208,13 @@ public class StatusPublisherImpl implements StatusPublisher {
 					Issue issue = jira.getIssue(ticket);
 					// filter by status and resolution
 					Status status = issue.getStatus();
-					if (status == null || issue.getResolution() == null) {
-						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status.");
-					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName())) {
-						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
-						log.info("Issue: ", issue.getKey());
-					} else {
+					if (status == null && issue.getResolution() == null) {
+						log.info("There is the changes with the status and the resolution are equals null. The information about these issues will not added to the report and will not be transited to the next Status.");
+					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
+							log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
+							log.info("Issue: ", issue.getKey());
+					}
+					if  (Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
 
 						log.info("The current ticket [" + ticket + "] will be added to the report list.");
 
