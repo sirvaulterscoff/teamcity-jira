@@ -149,10 +149,15 @@ public class StatusPublisherImpl implements StatusPublisher {
 	}
 
 	public void buildFinished(SRunningBuild build) {
+		log.info("Teamcity-jira plugin starts process after build finished");
+		jetbrains.buildServer.messages.Status buildState = build.getBuildStatus();
+		if (!buildState.equals(jetbrains.buildServer.messages.Status.NORMAL)) {
+			log.info("The build was finish not with the NORMAL State, ut with the State [" + buildState + "]");
+			return;
+		}
 		ParametersProvider parametersProvider = build.getParametersProvider();
 		Map<String, String> parametersProviderAll = parametersProvider.getAll();
 		Map<String, String> customJiraParameters = buildParametersMap(params.get(CUSTOM_JIRA_PARAMETERS), parametersProviderAll);
-		log.info("Start process after build finished");
 		String jiraProjectsStr = formatComment(params.get(JIRA_PROJECT_KEYS), parametersProviderAll);
 		Iterable<String> jiraProjects = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(jiraProjectsStr);
 		boolean addComment = Boolean.parseBoolean(params.get(ADD_COMMENT));
@@ -211,10 +216,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 					if (status == null && issue.getResolution() == null) {
 						log.info("There is the changes with the status and the resolution are equals null. The information about these issues will not added to the report and will not be transited to the next Status.");
 					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
-							log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
-							log.info("Issue: ", issue.getKey());
+						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
+						log.info("Issue: ", issue.getKey());
 					}
-					if  (Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
+					if (Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
 
 						log.info("The current ticket [" + ticket + "] will be added to the report list.");
 
