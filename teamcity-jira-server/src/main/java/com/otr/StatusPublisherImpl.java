@@ -323,11 +323,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 		StringBuilder stringBuilder = new StringBuilder();
 
 		stringBuilder.append(reportSubject);
-		stringBuilder.append("\n");
+		stringBuilder.append("\r\n");
 		if (reportedTicketList == null || reportedTicketList.isEmpty()) {
 			stringBuilder.append(emptyIssueListMessage);
-			stringBuilder.append("\n");
-			stringBuilder.append("\n");
+			stringBuilder.append("\r\n");
+			stringBuilder.append("\r\n");
 
 			return stringBuilder.toString();
 		}
@@ -335,9 +335,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 			stringBuilder.append(ticketInfo.get(ISSUE_KEY));
 			stringBuilder.append(": ");
 			stringBuilder.append(ticketInfo.get(ISSUE_SUMMARY));
-			stringBuilder.append("\n");
+			stringBuilder.append("\r\n");
 		}
-		stringBuilder.append("\n");
+		stringBuilder.append("\r\n");
 
 		return stringBuilder.toString();
 	}
