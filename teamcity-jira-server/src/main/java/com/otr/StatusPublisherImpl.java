@@ -52,6 +52,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.StringWriter;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.*;
 import javax.mail.*;
 import javax.mail.internet.*;
@@ -259,6 +260,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 						}
 					}
 				} catch (JiraException e) {
+					if ((e).getCause() instanceof UnknownHostException) {
+						log.error("Unknown Jira host or Jira is in inaccessible state. The Jira report will not created. ", e.getCause());
+						return;
+					}
 					log.error("Failed to get issue " + ticket + " from jira", e);
 				}
 			}
