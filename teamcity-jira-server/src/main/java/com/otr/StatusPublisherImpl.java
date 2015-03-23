@@ -18,6 +18,7 @@ import net.rcarz.jiraclient.JiraException;
 import net.rcarz.jiraclient.RestClient;
 import net.rcarz.jiraclient.Status;
 import net.rcarz.jiraclient.Version;
+import net.sf.json.JSONObject;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.conn.ClientConnectionManager;
@@ -78,6 +79,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String PLACEHOLDER_SUFFIX = "}";
 	public static final String SPLITTER = ",";
 	public static final String PAIR_SPLITTER = ":";
+	public static final String VALUE_SPLITTER = "\\|";
 
 	public static final String NOT_AN_ISSUE = "not-issue";
 
@@ -85,6 +87,8 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String JIRA_RESOLUTION_IDS = "jiraResolutionIds";
 	public static final String JIRA_DEFAULT_STATUS_IDS = "Closed";
 	public static final String JIRA_DEFAULT_RESOLUTION_IDS = "Fixed";
+	public static final String JIRA_FILTER_FIELDS = "jiraFilterFields";
+	public static final String JIRA_FILTER_FIELDS_AND = "jiraFilterFieldsAnd";
 
 	public static final String JIRA_PROJECT_KEYS = "jiraKeys";
 	public static final String JIRA_URL = "jiraUrl";
@@ -158,11 +162,17 @@ public class StatusPublisherImpl implements StatusPublisher {
 		}
 		ParametersProvider parametersProvider = build.getParametersProvider();
 		Map<String, String> parametersProviderAll = parametersProvider.getAll();
+
 		Map<String, String> customJiraParameters = buildParametersMap(params.get(CUSTOM_JIRA_PARAMETERS), parametersProviderAll);
 		String jiraProjectsStr = formatComment(params.get(JIRA_PROJECT_KEYS), parametersProviderAll);
 		Iterable<String> jiraProjects = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(jiraProjectsStr);
+
 		boolean addComment = Boolean.parseBoolean(params.get(ADD_COMMENT));
 		String commentFormat = params.get(COMMENT_FORMAT);
+
+		Map<String, String> jiraFilterFieldsList = buildParametersMap(params.get(JIRA_FILTER_FIELDS), parametersProviderAll);
+		boolean jiraFilterFieldsAnd = Boolean.parseBoolean(params.get(JIRA_FILTER_FIELDS_AND));
+
 		String jiraStatusIdsList = formatComment(params.get(JIRA_STATUS_IDS), parametersProviderAll);
 		String[] jiraStatusIds;
 		if (jiraStatusIdsList != null) {
@@ -214,13 +224,26 @@ public class StatusPublisherImpl implements StatusPublisher {
 					Issue issue = jira.getIssue(ticket);
 					// filter by status and resolution
 					Status status = issue.getStatus();
+					boolean isValidIssue = false;
+					boolean isChecked = checkJiraCustomFilterFields(jiraFilterFieldsList, issue);
 					if (status == null && issue.getResolution() == null) {
 						log.info("There is the changes with the status and the resolution are equals null. The information about these issues will not added to the report and will not be transited to the next Status.");
-					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
-						log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
-						log.info("Issue: ", issue.getKey());
+					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) || (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
+						log.info("There is the changes with the status and the resolution not in the user set found.");
+						if (!isChecked || (isChecked && jiraFilterFieldsAnd)) {
+							log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
+							log.info("Issue: ", issue.getKey());
+							isValidIssue = false;
+						} else {
+							isValidIssue = true;
+						}
+					} else if (isChecked || (!isChecked && !jiraFilterFieldsAnd)) {
+						isValidIssue = true;
 					}
-					if (Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
+					if (isValidIssue) {
+//						if ((checkJiraCustomFilterFields(jiraFilterFieldsList, issue) && jiraFilterFieldsAnd) || (!checkJiraCustomFilterFields(jiraFilterFieldsList, issue) && !jiraFilterFieldsAnd))
+//					if (((Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) || (!jiraFilterFieldsAnd)) &&
+//					    (checkJiraCustomFilterFields(jiraFilterFieldsList, issue))) {
 
 						log.info("The current ticket [" + ticket + "] will be added to the report list.");
 
@@ -231,8 +254,13 @@ public class StatusPublisherImpl implements StatusPublisher {
 						reportedTicketInfo.put(ISSUE_TYPE, issue.getIssueType().getName());
 						reportedTicketInfo.put(ISSUE_AUTOR, issue.getReporter().getDisplayName());
 						if (customJiraParameters != null) {
+							Object field = null;
 							for (String key : customJiraParameters.keySet()) {
-								reportedTicketInfo.put(customJiraParameters.get(key), issue.getField(key).toString());
+								field = issue.getField(key);
+								if (field instanceof JSONObject) {
+									field = ((JSONObject) field).getString("value");
+								}
+								reportedTicketInfo.put(customJiraParameters.get(key), field.toString());
 							}
 						}
 						reportedTicketsList.add(reportedTicketInfo);
@@ -307,9 +335,29 @@ public class StatusPublisherImpl implements StatusPublisher {
 		}
 	}
 
+	private static boolean checkJiraCustomFilterFields(Map<String, String> jiraFilterFieldsList, Issue issue) {
+		if (jiraFilterFieldsList == null || jiraFilterFieldsList.isEmpty()) {
+			return true;
+		}
+		for (String jiraFieldName : jiraFilterFieldsList.keySet()) {
+			String[] jiraFieldValues = jiraFilterFieldsList.get(jiraFieldName).trim().split(VALUE_SPLITTER);
+
+			Object field = issue.getField(jiraFieldName);
+			if (field instanceof JSONObject) {
+				field = ((JSONObject) field).getString("value");
+			}
+			if (Arrays.asList(jiraFieldValues).contains(field.toString())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static Map<String, String> buildParametersMap(String sourceParameters, Map<String, String> tcParameters) {
 		Map<String, String> parameters = new HashMap<String, String>();
-
+		if (sourceParameters == null) {
+			return parameters;
+		}
 		Iterable<String> parameterPairs = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(sourceParameters);
 		for (String parameterPair : parameterPairs) {
 			Iterable<String> parameter = Splitter.on(PAIR_SPLITTER).trimResults().omitEmptyStrings().split(parameterPair);

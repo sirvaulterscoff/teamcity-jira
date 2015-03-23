@@ -106,6 +106,18 @@
 						<props:textProperty name="jiraResolutionIds" className="stringField"/>
 					</td>
 				</tr>
+				<tr>
+					<td><label for="jiraFilterFields">Custom filter fields and values:&nbsp;</label></td>
+					<td>
+						<props:textProperty name="jiraFilterFields" className="stringField"/>
+					</td>
+				</tr>
+				<tr>
+					<td><label for="jiraFilterFieldsAnd">Custom filter fields AND (OR if false) resolution/status:&nbsp;</label></td>
+					<td>
+						<props:checkboxProperty name="jiraFilterFieldsAnd" className="stringField"/>
+					</td>
+				</tr>
 
 				</tbody>
 			</table>
