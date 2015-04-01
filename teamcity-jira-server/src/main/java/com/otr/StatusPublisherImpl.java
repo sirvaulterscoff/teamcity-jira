@@ -228,7 +228,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 					boolean isChecked = checkJiraCustomFilterFields(jiraFilterFieldsList, issue);
 					if (status == null && issue.getResolution() == null) {
 						log.info("There is the changes with the status and the resolution are equals null. The information about these issues will not added to the report and will not be transited to the next Status.");
-					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) || (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
+					} else if (!Arrays.asList(jiraStatusIds).contains(status.getName()) && (issue.getResolution() == null || !Arrays.asList(jiraResolutionIds).contains(issue.getResolution().getName()))) {
 						log.info("There is the changes with the status and the resolution not in the user set found.");
 						if (!isChecked || (isChecked && jiraFilterFieldsAnd)) {
 							log.info("There is the changes with the status and the resolution not in the user set found. The information about these issues will not added to the report and will not be transited to the next Status:");
@@ -257,10 +257,14 @@ public class StatusPublisherImpl implements StatusPublisher {
 							Object field = null;
 							for (String key : customJiraParameters.keySet()) {
 								field = issue.getField(key);
-								if (field instanceof JSONObject) {
-									field = ((JSONObject) field).getString("value");
+								if (field != null) {
+									if (field instanceof JSONObject) {
+										field = ((JSONObject) field).getString("value");
+									}
+									reportedTicketInfo.put(customJiraParameters.get(key), field.toString());
+								} else {
+									reportedTicketInfo.put(customJiraParameters.get(key), "null");
 								}
-								reportedTicketInfo.put(customJiraParameters.get(key), field.toString());
 							}
 						}
 						reportedTicketsList.add(reportedTicketInfo);
@@ -642,7 +646,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 			for (String msg : commitMsgs) {
 				for (String jiraProject : jiraProjects) {
 					jiraProject = jiraProject.endsWith("-") ? StringUtils.removeEnd(jiraProject, "-") : jiraProject;
-					Pattern pattern = Pattern.compile("^(" + jiraProject + "-\\d+)[:]?\\s.*");
+					Pattern pattern = Pattern.compile("^(" + jiraProject + "-\\d+)[:]?(\\s|$).*");
 					final Matcher matcher = pattern.matcher(msg);
 					log.info("Commit msg [" + msg + "] " + (matcher.matches() ? " matches " : " skipped"));
 					if (matcher.matches()) {
