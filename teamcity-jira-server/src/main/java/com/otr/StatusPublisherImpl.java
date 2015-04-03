@@ -18,6 +18,7 @@ import net.rcarz.jiraclient.JiraException;
 import net.rcarz.jiraclient.RestClient;
 import net.rcarz.jiraclient.Status;
 import net.rcarz.jiraclient.Version;
+import net.sf.json.JSONNull;
 import net.sf.json.JSONObject;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
@@ -258,7 +259,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 							Object field = null;
 							for (String key : customJiraParameters.keySet()) {
 								field = issue.getField(key);
-								if (field != null) {
+								if (field != null && !(field instanceof JSONNull)) {
 									if (field instanceof JSONObject) {
 										field = ((JSONObject) field).getString("value");
 									}
