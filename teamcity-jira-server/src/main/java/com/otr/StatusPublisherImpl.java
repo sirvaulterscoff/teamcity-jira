@@ -80,6 +80,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String SPLITTER = ",";
 	public static final String PAIR_SPLITTER = ":";
 	public static final String VALUE_SPLITTER = "\\|";
+	public static final String NULL_MESSAGE_REPLACEMENT = "-";
 
 	public static final String NOT_AN_ISSUE = "not-issue";
 
@@ -263,7 +264,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 									}
 									reportedTicketInfo.put(customJiraParameters.get(key), field.toString());
 								} else {
-									reportedTicketInfo.put(customJiraParameters.get(key), "null");
+									reportedTicketInfo.put(customJiraParameters.get(key), NULL_MESSAGE_REPLACEMENT);
 								}
 							}
 						}
@@ -603,7 +604,12 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 		if (customParameters != null) {
 			for (String customKey : customParameters.keySet()) {
-				context.put(customKey, customParameters.get(customKey));
+				String value = customParameters.get(customKey);
+				if (value == null || "null".equalsIgnoreCase(value)) {
+					context.put(customKey, NULL_MESSAGE_REPLACEMENT);
+				} else {
+					context.put(customKey, value);
+				}
 			}
 		}
 
