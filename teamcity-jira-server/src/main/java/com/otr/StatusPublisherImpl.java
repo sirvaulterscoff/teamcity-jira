@@ -284,12 +284,18 @@ public class StatusPublisherImpl implements StatusPublisher {
 						}
 
 						if (transitionIssue) {
-							Map<String, String> transitionMap = Splitter.on(",").trimResults().omitEmptyStrings().withKeyValueSeparator(":").split(transitionFormat);
+							Map<String, String> transitionMap = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().withKeyValueSeparator(PAIR_SPLITTER).split(transitionFormat);
 							Status existingStatus = issue.getStatus();
-							String newStatus = transitionMap.get(existingStatus.getName());
-							if (StringUtils.isNotBlank(newStatus)) {
-								log.info(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
-								issue.transition().execute(newStatus);
+							Iterable<String> newStatuses = Splitter.on("|").trimResults().omitEmptyStrings().split(transitionMap.get(existingStatus.getName()));
+							for (String newStatus : newStatuses) {
+								if (StringUtils.isNotBlank(newStatus)) {
+									try {
+										log.info(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
+										issue.transition().execute(newStatus);
+									} catch (JiraException e) {
+										log.error("Failed transition Jira issue [ " + ticket + " ] from the status [ " + existingStatus + " ]" + "to the new status [ " + newStatus + " ]", e);
+									}
+								}
 							}
 						}
 					}
@@ -298,7 +304,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						log.error("Unknown Jira host or Jira is in inaccessible state. The Jira report will not created. ", e.getCause());
 						return;
 					}
-					log.error("Failed to get issue " + ticket + " from jira", e);
+					log.error("Failed to process issue " + ticket + " from jira", e);
 				}
 			}
 		}
