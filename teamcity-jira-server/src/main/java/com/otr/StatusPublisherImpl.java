@@ -286,16 +286,23 @@ public class StatusPublisherImpl implements StatusPublisher {
 						if (transitionIssue) {
 							Map<String, String> transitionMap = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().withKeyValueSeparator(PAIR_SPLITTER).split(transitionFormat);
 							Status existingStatus = issue.getStatus();
-							Iterable<String> newStatuses = Splitter.on("|").trimResults().omitEmptyStrings().split(transitionMap.get(existingStatus.getName()));
-							for (String newStatus : newStatuses) {
-								if (StringUtils.isNotBlank(newStatus)) {
-									try {
-										log.info(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
-										issue.transition().execute(newStatus);
-									} catch (JiraException e) {
-										log.error("Failed transition Jira issue [ " + ticket + " ] from the status [ " + existingStatus + " ]" + "to the new status [ " + newStatus + " ]", e);
+							log.info(String.format("Check for available transitions for the status [ %s ]", existingStatus));
+							String availableTransitions = transitionMap.get(existingStatus.getName());
+							log.info(String.format("Available transitions for the status [ %s ] is ", existingStatus));
+							if (availableTransitions != null) {
+								Iterable<String> newStatuses = Splitter.on("|").trimResults().omitEmptyStrings().split(availableTransitions);
+								for (String newStatus : newStatuses) {
+									if (StringUtils.isNotBlank(newStatus)) {
+										try {
+											log.info(String.format("Changing state for issue %s from %s to %s", ticket, existingStatus, newStatus));
+											issue.transition().execute(newStatus);
+										} catch (JiraException e) {
+											log.error("Failed transition Jira issue [ " + ticket + " ] from the status [ " + existingStatus + " ]" + "to the new status [ " + newStatus + " ]", e);
+										}
 									}
 								}
+							} else {
+								log.info(String.format("Failed changing state Jira issue [ %s ] for the status [ %s ] because the available transition is null ", ticket, existingStatus));
 							}
 						}
 					}
