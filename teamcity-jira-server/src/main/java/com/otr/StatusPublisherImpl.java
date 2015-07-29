@@ -280,7 +280,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 								.isPresent()) {
 							List versions = new LinkedList(issue.getFixVersions());
 							versions.add(resolveVersion);
-							issue.update().field(Field.FIX_VERSIONS, versions).execute();
+							try {
+								issue.update().field(Field.FIX_VERSIONS, versions).execute();
+							} catch (JiraException e) {
+								log.error("Failed to update issue version", e);
+							}
 						}
 
 						if (transitionIssue) {
