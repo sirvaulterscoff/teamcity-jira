@@ -252,9 +252,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 						HashMap<String, String> reportedTicketInfo = new HashMap<String, String>();
 						reportedTicketInfo.put(ISSUE_KEY, issue.getKey());
 						reportedTicketInfo.put(ISSUE_SUMMARY, issue.getSummary());
-						reportedTicketInfo.put(ISSUE_PRIORITY, issue.getPriority().getName());
-						reportedTicketInfo.put(ISSUE_TYPE, issue.getIssueType().getName());
-						reportedTicketInfo.put(ISSUE_AUTOR, issue.getReporter().getDisplayName());
+						reportedTicketInfo.put(ISSUE_PRIORITY, issue.getPriority() != null ? issue.getPriority().getName() : NULL_MESSAGE_REPLACEMENT);
+						reportedTicketInfo.put(ISSUE_TYPE, issue.getIssueType() != null ? issue.getIssueType().getName() : NULL_MESSAGE_REPLACEMENT);
+						reportedTicketInfo.put(ISSUE_AUTOR, issue.getReporter() != null ? issue.getReporter().getDisplayName() : NULL_MESSAGE_REPLACEMENT);
 						if (customJiraParameters != null) {
 							Object field = null;
 							for (String key : customJiraParameters.keySet()) {
@@ -280,7 +280,11 @@ public class StatusPublisherImpl implements StatusPublisher {
 								.isPresent()) {
 							List versions = new LinkedList(issue.getFixVersions());
 							versions.add(resolveVersion);
-							issue.update().field(Field.FIX_VERSIONS, versions).execute();
+							try {
+								issue.update().field(Field.FIX_VERSIONS, versions).execute();
+							} catch (JiraException e) {
+								log.error("Failed to update issue version", e);
+							}
 						}
 
 						if (transitionIssue) {
