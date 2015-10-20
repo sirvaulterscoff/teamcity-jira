@@ -3,6 +3,7 @@ package com.otr;
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
+import com.google.common.base.Strings;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import jetbrains.buildServer.parameters.ParametersProvider;
@@ -47,6 +48,12 @@ import org.tmatesoft.svn.core.io.diff.SVNDeltaGenerator;
 import org.tmatesoft.svn.core.wc.SVNWCUtil;
 
 import javax.annotation.Nullable;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -55,18 +62,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.util.*;
-import javax.mail.*;
-import javax.mail.internet.*;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -79,6 +79,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String PLACEHOLDER_PREFIX = "#{";
 	public static final String PLACEHOLDER_SUFFIX = "}";
 	public static final String SPLITTER = ",";
+	public static final String SPLITTER_REVISION = "->";
 	public static final String PAIR_SPLITTER = ":";
 	public static final String VALUE_SPLITTER = "\\|";
 	public static final String NULL_MESSAGE_REPLACEMENT = "-";
@@ -136,6 +137,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String DEFAULT_DEVELOPMENT_TEAM_NAME = "Our Development Team";
 
 	public static final String BUILD_TRIGGERED_BY = "triggeredBy";
+	//дефолтное значение для обратной совместимости
 	public static final String CVS_REVISION_NUMBER = "cvsRevisionNumber";
 
 	public static final String ISSUE_LIST = "issueList";
@@ -339,18 +341,20 @@ public class StatusPublisherImpl implements StatusPublisher {
 			templateName = userFileName;
 		}
 
-		long srcRevision = -1;
+		Map<String, Long> srcRevision = new HashMap<String, Long>();
 
 		Map<String, String> customUserParameters = buildParametersMap(params.get(CUSTOM_USER_PARAMETERS), parametersProviderAll);
 
 		Map<String, String> customParameters = new HashMap<String, String>(customUserParameters);
 
 		if (Boolean.parseBoolean(params.get(COMMIT_TO_SVN))) {
-			srcRevision = addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, -1), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
-
 			String txtSubject = formatComment(params.get(REPORTTXT_COMMIT_SUBJECT), parametersProviderAll);
 			String txtEmptyIssueMessage = formatComment(params.get(REPORTTXT_COMMIT_EMPTY_ISSUELIST), parametersProviderAll);
-			addToSVN(params, processTXT(reportedTicketsList, txtSubject, txtEmptyIssueMessage), formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
+			srcRevision = addToSVN(params, processTXT(reportedTicketsList, txtSubject, txtEmptyIssueMessage), formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
+
+			addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, srcRevision), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
+
+
 		}
 
 		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
@@ -418,9 +422,10 @@ public class StatusPublisherImpl implements StatusPublisher {
 		return stringBuilder.toString();
 	}
 
-	private static long addToSVN(Map<String, String> params, String reportContent, String revisionFilePath) {
-		long srcRevision = -1;
+	private static Map<String, Long> addToSVN(Map<String, String> params, String reportContent, String revisionFilePath) {
+		Map<String, Long> srcRevisionMap = new HashMap<String, Long>();
 		SVNCommitInfo svnCommitInfo = null;
+		long srcRevisionLast = -1;
 
 		try {
 			log.info("Start to init SVN connection.");
@@ -430,9 +435,24 @@ public class StatusPublisherImpl implements StatusPublisher {
 			String name = params.get(SVN_USER_NAME);
 			String password = params.get(SVN_USER_PASSWORD);
 
-			Iterable<String> urls = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(params.get(SVN_URL));
+			Iterable<String> urlsWith = Splitter.on(SPLITTER).trimResults().omitEmptyStrings().split(params.get(SVN_URL));
 
-			for (String url : urls) {
+			//парсинг строк которые могут содержать имена переменных ревизий и урлы репозиториев
+			for (String urlWith : urlsWith) {
+				String url = null;
+				String revisionName = null;
+				long srcRevision = -1;
+				boolean isUrl = true;
+				for(String part : Splitter.on(SPLITTER_REVISION).trimResults().omitEmptyStrings().split(urlWith)){
+					if (isUrl){
+						url = part;
+						isUrl = false;
+					} else {
+						revisionName = part;
+					}
+				}
+
+
 				SVNRepository repository = SVNRepositoryFactory.create(SVNURL.parseURIEncoded(url));
 
 				ISVNAuthenticationManager authManager = SVNWCUtil.createDefaultAuthenticationManager(name, password);
@@ -470,19 +490,25 @@ public class StatusPublisherImpl implements StatusPublisher {
 						// after updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
 					}
+					if (!Strings.isNullOrEmpty(revisionName)){
+						srcRevisionMap.put(revisionName, srcRevision);
+						srcRevisionLast = srcRevision;
+					}
 				} catch (SVNException svne) {
 					if (editor != null) {
 						editor.abortEdit();
 					}
 					log.error("The error was occurs when tried to commit Jira report file to SVN ", svne);
-					return -1;
+					return srcRevisionMap;
 				}
 			}
+			//выставляем дефолтное значение переменной номера ревизии как последние (в случае нескольких репо-ев) значение
+			srcRevisionMap.put(CVS_REVISION_NUMBER, srcRevisionLast);
 		} catch (Exception e) {
 			log.error("The error was occurs when tried to update Jira report file at SVN", e);
-			return -1;
+			return srcRevisionMap;
 		}
-		return srcRevision;
+		return srcRevisionMap;
 	}
 
 	private static void sendEmails(Properties properties, Map<String, String> params, String reportContent, String typeContent, ParametersProvider parametersProvider) {
@@ -590,7 +616,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	}
 
 	//templatePath == build.getParametersProvider().get("teamcity.build.checkoutDir") + params.get(REPORT_TEMPLATE_FILE_PATH) + System.getProperty("file.separator")
-	public String processHTML(String templatePath, String templateName, List<Map<String, String>> reportedTicketsList, Map<String, String> customParameters, SRunningBuild build, long srcRevision) {
+	public String processHTML(String templatePath, String templateName, List<Map<String, String>> reportedTicketsList, Map<String, String> customParameters, SRunningBuild build, Map<String, Long> srcRevisionMap) {
 		log.info("The process template report started.");
 
 		ParametersProvider parametersProvider = build.getParametersProvider();
@@ -612,14 +638,20 @@ public class StatusPublisherImpl implements StatusPublisher {
 		}
 		context.put(DEVELOPMENT_TEAM_NAME, developmentTeamName);
 		context.put(BUILD_TRIGGERED_BY, build.getTriggeredBy().getAsString());
-		String revisionNumber = "";
-		if (srcRevision > 0) {
-			revisionNumber = "?p=" + srcRevision;
+		//добавление всех найденных заданных пользователем пар (Имя переменной - номер ревизии для репозитория) в контекст
+		// + дефолтное значение в случае одного репо-ия
+		if (srcRevisionMap != null && srcRevisionMap.size() > 1) {
+			for (String revName : srcRevisionMap.keySet()) {
+				long revisionNumber = srcRevisionMap.get(revName);
+				String revisionNumberAsString = "";
+				if (revisionNumber > 0) {
+					revisionNumberAsString = "?p=" + revisionNumber;
+				}
+				context.put(revName, revisionNumberAsString);
+			}
 		}
-		context.put(CVS_REVISION_NUMBER, revisionNumber);
 
 		context.put(ISSUE_LIST, reportedTicketsList);
-
 		if (customParameters != null) {
 			for (String customKey : customParameters.keySet()) {
 				String value = customParameters.get(customKey);
