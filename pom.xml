@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.otr</groupId>
 	<artifactId>teamcity-jira</artifactId>
-	<version>2.12</version>
+	<version>2.13</version>
 	<packaging>pom</packaging>
 	<properties>
 		<teamcity-version>8.1.4</teamcity-version>
