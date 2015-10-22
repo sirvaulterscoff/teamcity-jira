@@ -640,7 +640,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 		context.put(BUILD_TRIGGERED_BY, build.getTriggeredBy().getAsString());
 		//добавление всех найденных заданных пользователем пар (Имя переменной - номер ревизии для репозитория) в контекст
 		// + дефолтное значение в случае одного репо-ия
-		if (srcRevisionMap != null && srcRevisionMap.size() > 1) {
+		if (srcRevisionMap != null && srcRevisionMap.size() >= 1) {
 			for (String revName : srcRevisionMap.keySet()) {
 				long revisionNumber = srcRevisionMap.get(revName);
 				String revisionNumberAsString = "";
