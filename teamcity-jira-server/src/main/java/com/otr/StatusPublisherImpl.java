@@ -353,8 +353,6 @@ public class StatusPublisherImpl implements StatusPublisher {
 			srcRevision = addToSVN(params, processTXT(reportedTicketsList, txtSubject, txtEmptyIssueMessage), formatComment(params.get(SVN_TXTFILE_NAME), parametersProviderAll));
 
 			addToSVN(params, processHTML(templatePath, templateName, reportedTicketsList, customParameters, build, srcRevision), formatComment(params.get(SVN_HTMLFILE_NAME), parametersProviderAll));
-
-
 		}
 
 		if (Boolean.parseBoolean(params.get(SEND_EMAIL_NOTIFICATION))) {
@@ -425,7 +423,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	private static Map<String, Long> addToSVN(Map<String, String> params, String reportContent, String revisionFilePath) {
 		Map<String, Long> srcRevisionMap = new HashMap<String, Long>();
 		SVNCommitInfo svnCommitInfo = null;
-		long srcRevisionLast = -1;
+		long srcRevision = -1;
 
 		try {
 			log.info("Start to init SVN connection.");
@@ -441,7 +439,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 			for (String urlWith : urlsWith) {
 				String url = null;
 				String revisionName = null;
-				long srcRevision = -1;
+				srcRevision = -1;
 				boolean isUrl = true;
 				for(String part : Splitter.on(SPLITTER_REVISION).trimResults().omitEmptyStrings().split(urlWith)){
 					if (isUrl){
@@ -492,7 +490,6 @@ public class StatusPublisherImpl implements StatusPublisher {
 					}
 					if (!Strings.isNullOrEmpty(revisionName)){
 						srcRevisionMap.put(revisionName, srcRevision);
-						srcRevisionLast = srcRevision;
 					}
 				} catch (SVNException svne) {
 					if (editor != null) {
@@ -503,7 +500,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 				}
 			}
 			//выставляем дефолтное значение переменной номера ревизии как последние (в случае нескольких репо-ев) значение
-			srcRevisionMap.put(CVS_REVISION_NUMBER, srcRevisionLast);
+			srcRevisionMap.put(CVS_REVISION_NUMBER, srcRevision);
 		} catch (Exception e) {
 			log.error("The error was occurs when tried to update Jira report file at SVN", e);
 			return srcRevisionMap;
