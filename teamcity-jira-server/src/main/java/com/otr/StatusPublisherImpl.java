@@ -492,8 +492,8 @@ public class StatusPublisherImpl implements StatusPublisher {
 					}
 					if (!Strings.isNullOrEmpty(revisionName)){
 						srcRevisionMap.put(revisionName, srcRevision);
-						srcRevisionLast = srcRevision;
 					}
+					srcRevisionLast = srcRevision;
 				} catch (SVNException svne) {
 					if (editor != null) {
 						editor.abortEdit();
