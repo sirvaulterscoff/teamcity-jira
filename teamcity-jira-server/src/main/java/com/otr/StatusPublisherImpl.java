@@ -558,7 +558,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 			Transport.send(message);
 			log.info("Sent e-mail message successfully....");
 		} catch (MessagingException mex) {
-			mex.printStackTrace();
+			log.error(mex.getMessage(), mex);
 		}
 	}
 

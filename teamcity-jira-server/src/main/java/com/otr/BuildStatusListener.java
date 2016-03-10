@@ -43,6 +43,14 @@ public class BuildStatusListener extends BuildServerAdapter {
 
 	@Override
 	public void buildFinished(@NotNull SRunningBuild build) {
+		try {
+			buildFinished0(build);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+		}
+	}
+
+	private void buildFinished0(@NotNull SRunningBuild build) {
 		log.info("Check for process after build finished for build: " + build.getFullName());
 		final SBuildType buildType = build.getBuildType();
 		if(buildType == null) {
