@@ -51,6 +51,12 @@
 						<props:textProperty name="reportTemplateFileName" className="stringField"/>
 					</td>
 				</tr>
+				<tr>
+					<td><label for="filterChanges">Filter changes for current branch:&nbsp;</label></td>
+					<td>
+						<props:checkboxProperty name="filterChanges"/>
+					</td>
+				</tr>
 				</tbody>
 			</table>
 

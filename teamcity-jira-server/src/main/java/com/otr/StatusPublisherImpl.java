@@ -7,9 +7,12 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import jetbrains.buildServer.parameters.ParametersProvider;
+import jetbrains.buildServer.serverSide.BuildRevision;
 import jetbrains.buildServer.serverSide.SRunningBuild;
 import jetbrains.buildServer.vcs.SVcsModification;
 import jetbrains.buildServer.vcs.SelectPrevBuildPolicy;
+import jetbrains.buildServer.vcs.VcsRootInstance;
+import jetbrains.buildServer.vcs.impl.VcsRootInstanceImpl;
 import net.rcarz.jiraclient.BasicCredentials;
 import net.rcarz.jiraclient.Field;
 import net.rcarz.jiraclient.ICredentials;
@@ -66,7 +69,18 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -100,6 +114,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 	public static final String RESOLVE_VERSION = "resolveVersion";
 	public static final String COMMENT_FORMAT = "commentFormat";
 	public static final String ADD_COMMENT = "addComment";
+	public static final String FILTER_CHANGES = "filterChanges";
 
 	public static final String TRANSITION_ISSUE = "transitionIssue";
 	public static final String TRANSITION_FORMAT = "transitionFormat";
@@ -201,7 +216,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 		boolean transitionIssue = Boolean.parseBoolean(params.get(TRANSITION_ISSUE));
 		String transitionFormat = formatComment(params.get(TRANSITION_FORMAT), parametersProviderAll);
 
-		List<SVcsModification> changes = build.getChanges(SelectPrevBuildPolicy.SINCE_LAST_SUCCESSFULLY_FINISHED_BUILD, true);
+		List<SVcsModification> changes = getChanges(build);
 		List<Map<String, String>> reportedTicketsList = new ArrayList();
 		log.info("Check build changes as not empty");
 		if (CollectionUtils.isNotEmpty(changes)) {
@@ -360,6 +375,57 @@ public class StatusPublisherImpl implements StatusPublisher {
 		}
 	}
 
+	private List<SVcsModification> getChanges(SRunningBuild build) {
+		//возвращает упорядоченный список
+		List<SVcsModification> modifications = build.getChanges(SelectPrevBuildPolicy.SINCE_LAST_SUCCESSFULLY_FINISHED_BUILD, true);
+
+		boolean filterChanges = Boolean.parseBoolean(params.get(FILTER_CHANGES));
+		if (!filterChanges) {
+			return modifications;
+		}
+
+		ParametersProvider parametersProvider = build.getParametersProvider();
+		List<SVcsModification> result = new LinkedList<SVcsModification>();
+
+		Map<String, String> vcsBranchNames = new HashMap<String, String>();
+		List<BuildRevision> revisions = build.getRevisions();
+
+		if (revisions != null) {
+			for (BuildRevision revision : revisions) {
+				vcsBranchNames.put(revision.getRoot().getParent().getExternalId(), revision.getRepositoryVersion().getVcsBranch());
+			}
+		}
+
+		//Последовательно проверяем каждое изменение, соответствует ли оно только текущей ветки
+		//если нет, то дальше проверять нет смысла
+		for (SVcsModification modification : modifications) {
+			VcsRootInstance vcsRoot = modification.getVcsRoot();
+
+			if (!(vcsRoot instanceof VcsRootInstanceImpl)) {
+				continue;
+			}
+
+			VcsRootInstanceImpl vcsRootInstance = (VcsRootInstanceImpl) vcsRoot;
+
+			String currentVcsBranch = vcsBranchNames.get(vcsRoot.getParent().getExternalId());
+			if (currentVcsBranch == null) {
+				String configBranchKey = new StringBuilder("teamcity.build.vcs.branch.").append(vcsRootInstance.getExternalId()).toString();
+				currentVcsBranch = parametersProvider.get(configBranchKey);
+			}
+
+			if (currentVcsBranch == null || currentVcsBranch.isEmpty()) {
+				continue;
+			}
+
+			Set<String> branchesForChange = vcsRootInstance.getVcsBranchesContainingModId(modification.getId());
+			if (!branchesForChange.contains(currentVcsBranch) || branchesForChange.size() != 1) {
+				return result;
+			}
+			result.add(modification);
+		}
+		return result;
+	}
+
 	private static boolean checkJiraCustomFilterFields(Map<String, String> jiraFilterFieldsList, Issue issue) {
 		if (jiraFilterFieldsList == null || jiraFilterFieldsList.isEmpty()) {
 			return true;
@@ -441,8 +507,8 @@ public class StatusPublisherImpl implements StatusPublisher {
 				String revisionName = null;
 				srcRevision = -1;
 				boolean isUrl = true;
-				for(String part : Splitter.on(SPLITTER_REVISION).trimResults().omitEmptyStrings().split(urlWith)){
-					if (isUrl){
+				for (String part : Splitter.on(SPLITTER_REVISION).trimResults().omitEmptyStrings().split(urlWith)) {
+					if (isUrl) {
 						url = part;
 						isUrl = false;
 					} else {
@@ -488,7 +554,7 @@ public class StatusPublisherImpl implements StatusPublisher {
 						// after updates because is the current revision should be
 						srcRevision = repository.getLatestRevision();
 					}
-					if (!Strings.isNullOrEmpty(revisionName)){
+					if (!Strings.isNullOrEmpty(revisionName)) {
 						srcRevisionMap.put(revisionName, srcRevision);
 					}
 				} catch (SVNException svne) {
@@ -675,8 +741,9 @@ public class StatusPublisherImpl implements StatusPublisher {
 
 	private static String formatComment(String commentFormat, Map<String, String> args) {
 		String out = commentFormat;
-		if (commentFormat == null)
+		if (commentFormat == null) {
 			return out;
+		}
 		for (String arg : args.keySet()) {
 			out = Pattern.compile(Pattern.quote(PLACEHOLDER_PREFIX + arg + PLACEHOLDER_SUFFIX)).
 					matcher(out).

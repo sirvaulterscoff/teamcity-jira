@@ -7,7 +7,7 @@
 	<version>2.16</version>
 	<packaging>pom</packaging>
 	<properties>
-		<teamcity-version>8.1.4</teamcity-version>
+		<teamcity-version>9.1.6</teamcity-version>
 	</properties>
 	<repositories>
 		<repository>
